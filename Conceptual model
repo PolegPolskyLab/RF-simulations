@@ -1,4 +1,3 @@
-```c
 //---draw the RF; inputs are two 1d functions that describe the shape of the center and the surround, motion direction (-1-left,0-none,1-right) and masking one half of the stimulus (-1 left,0-none,1-right)
 function drawRF(wave RFcenterX,wave RFsurroundX,variable mov,variable HF)
 	variable tstop=400,stimS=63,stimE=180,tt
@@ -18,4 +17,3 @@ function drawRF(wave RFcenterX,wave RFsurroundX,variable mov,variable HF)
 	RFsT=(RFsT+RFsT2*0.1)							//---RF surround
 	RFtT=(RFcT/(RFsT+RFcT+.1)-RFsT2*.02)*2		//---the full RF
 end
-```c
