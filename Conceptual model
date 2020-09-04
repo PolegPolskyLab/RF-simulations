@@ -5,15 +5,13 @@ function drawRF(wave RFcenterX,wave RFsurroundX,variable mov,variable HF)
 	if(mov<0)	//---leftward motion
 		make/o/n=(tstop,numpnts(RFcenterX)) stim=( (-100+p-(q/2)*mov>stimS)&&(-100+p-(q/2)*mov<stimE) )*( HF*(q>numpnts(RFcenterX)/2-8)+(HF==0) )
 	endif
-	variable tauC=2,tauS=10,CS=0.2,tauS2=50	//---activation tau
-	make/o/n=(tstop) RFcT=0,RFsT=0,RFtT,RFsT2=0
+	variable tauC=2,tauS=10,CS=0.2	//---activation tau
+	make/o/n=(tstop) RFcT=0,RFsT=0,RFtT
 	for(tt=stimS;tt<tstop;tt++)
 		make/o/n=(numpnts(RFcenterX))/free activationX=RFcenterX[p]*stim[tt][p]
 		RFcT[tt]=RFcT[tt-1]*(1-1/tauC)+sum(activationX)
 		make/o/n=(numpnts(RFcenterX))/free activationX=-RFsurroundX[p]*stim[tt][p]*CS
 		RFsT[tt]=RFsT[tt-1]*(1-1/tauS)+sum(activationX)
-		RFsT2[tt]=RFsT2[tt-1]*(1-1/tauS2)+sum(activationX)		
 	endfor
-	RFsT=(RFsT+RFsT2*0.1)							//---RF surround
-	RFtT=(RFcT/(RFsT+RFcT+.1)-RFsT2*.02)*2		//---the full RF
+	RFtT=(RFcT/(RFsT+RFcT+.1))		//---the full RF
 end
