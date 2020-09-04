@@ -1,0 +1,153 @@
+//---first run this:
+lightresponsesFull(1)
+//---create a subdirectory and run this:
+lightresponsesBip()
+
+//---generation of the visual stimulus and outer retina responses
+function lightresponsesFull(variable contrast)
+	//---light stimulus
+	variable/g tstop=10500									//---duration of the simulation
+	variable/g field=1500									//---spatial extent of the visual arena
+	variable/g speed=0.5									//---stimulus speed
+	variable/g flanks=25									//---extent of the masked edges 
+	//---cells
+	variable/g phdist=10									//---distance between photoreceptors (and other cells)
+	variable/g phTauA=60,phTauB=400,phGainB=.8			//---tau activation/inactivaiton and their ratio for photorecptors
+	variable/g horTauA=120									//---tau response horizontal cell
+	variable/g ph_hor_gain=1,hor_ph_gain=1				//---synaptic strength ph->hc and hc->ph
+	variable/g horizdist=phdist,horizRad=60			//---hc distribution and radius
+	variable/g phnum=field/phdist							//---number of Ph
+	variable/g hornum=floor(field/horizdist)			//---number of HC 
+	variable tt,phcount,horcount,lightcount
+	variable/g smoothDist=2								//---smoothing of the stimulus, equivalent to the spread of the light cone
+	//---start the simulation
+	make /o/n=(tstop,phnum) stim=(q>flanks)*(q<=phnum-flanks)*((p-q/speed*10>4500)*(p-q/speed*10<6500)+(p>1000)*(p<3000))
+		//---first term-motion, second term-stationary stim
+	duplicate/o stim, origstim
+	//---duplicate a light cone effect
+	if(smoothDist>0)
+		for (tt=0;tt<tstop;tt+=10)
+			for (phcount=0;phcount<phnum;phcount+=1)
+				for (lightcount=-smoothDist;lightcount<=smoothDist;lightcount+=phdist*0+1)
+					if((phcount+lightcount>=0)&&(phcount+lightcount<dimsize(stim,1)))
+						stim[tt,tt+9][phcount]+=origstim[p][phcount+lightcount]*(smoothDist-abs(lightcount))/smoothDist
+					endif
+				endfor
+			endfor
+		endfor
+	endif
+	stim+=1
+	stim=log(stim)											//---convert light levels to log scale to match ph scale
+	variable stimmax=wavemax(stim)
+	stim/=stimmax											//---normalization by peak light level
+	stim*=contrast											//---contrats (-1 to 1)
+	setscale/I y,0,field,stim
+
+	//---photoreceptor
+	variable Vrest=0											//---resting potential
+	variable Vrel=-.2										//---release threshold
+	variable VrelAbs=abs(Vrel)
+	variable phSS=0											//---steady state voltage (start of simulation)
+	variable horSS=0											//---steady state voltage (start of simulation)
+	variable StimSS=0										//---steady state stim level (start of simulation)
+	
+	make/o/n=(tstop,phnum) ph=phSS						//---matrix of space-time ph activation
+	make/o/n=(tstop,phnum) phA=StimSS,phB=StimSS		//---matrix of ph A and B components
+	make/o/n=(phnum) phloc=phdist*p						//---ph location
+	//---horizontal cells
+	make/o/n=(tstop,hornum) hor=horSS,horinf=horSS	//---matric of HC activaiton
+	make/o/n=(tstop,hornum) horinfcount=0				//---helper matrix
+	make/o/n=(hornum) horloc=horizdist*p				//---HC location
+	setscale/I y,0,field,ph,hor,stim
+	variable cmpdist,counter
+	make/o/n=(field) ComDist=exp(-p^2/horizRad^2/2)	//---helper vectors
+	make/o/n=(phnum,hornum) DistMatrix=ComDist[abs(p-q)*phdist]
+	make/o/n=(phnum) CurrentHor=0,CurrentHorCount
+	//---photoreceptor
+	duplicate/o stim,ExcInh
+	ExcInh=StimSS
+	for(tt=1;tt<tstop;tt++)
+		//---inhibitory drive-the sum of all horizontal inputs
+		if(mod(tt,2000)==0)
+			doupdate //---GUI
+		endif
+		if(ph_hor_gain>0)									//---do if there is a feedback
+			CurrentHor=0										//---HC input to each Ph
+			for (horcount=0;horcount<hornum;horcount++)
+				CurrentHor+=(hor[tt-1][horcount])*DistMatrix[p][horcount]	//---horizontal input*distance from photoreceptor
+			endfor
+			CurrentHor=CurrentHor[p]>0 ? CurrentHor[p]*hor_ph_gain :  CurrentHor[p]*hor_ph_gain/4
+		endif
+		//---total ph drive - Ph voltage at infinity
+		ExcInh[tt][]=(CurrentHor[q]*(Vrel)+stim[p][q])/(CurrentHor[q]+stim[p][q]+1)	//---the total ph drive depends on exc (stim) and inhibition (currenthor)
+		
+	
+		//---photoreceptor tau
+		phA[tt][]=(ExcInh[tt][q]-phA[tt-1][q])/phTauA+phA[tt-1][q]	//---ph A (approaching excInh with tauA)
+		phB[tt][]=(ExcInh[tt][q]-phB[tt-1][q])/phTauB+phB[tt-1][q]	//---ph B
+		ph[tt][]=phA[tt][q]-phB[tt][q]*phGainB+Vrest					//---actual Ph activation
+
+		if(ph_hor_gain>0)													//---horizontal cell activation				
+			CurrentHor=0
+			CurrentHorCount=0
+			for (phcount=0;phcount<phnum;phcount++)					//---gather Ph input in HC RF
+				CurrentHor+=(ph[tt][phcount])*ph_hor_gain*DistMatrix[phcount][p]
+				CurrentHorCount+=DistMatrix[phcount][p]
+			endfor
+			CurrentHor/=CurrentHorCount									//---normalize by the size of RF			
+			horinf[tt][]=CurrentHor[q]/(CurrentHor[q]+1)				//---normalize HC voltage					
+			hor[tt][]=(horinf[p][q]-hor[p-1][q])/(horTauA)+hor[p-1][q]	//---actual HC activation
+		endif	
+		if(tt==4200)											//---reset voltages at the end of stationary step
+			ph[4000,4200][]=phSS
+			phA[4000,4200][]=StimSS
+			phB[4000,4200][]=StimSS
+			ExcInh[4000,4200][]=StimSS
+			hor[4000,4200][]=horSS
+			horinf[4000,4200][]=horSS
+		endif
+	endfor
+end
+
+//---compute BC responses
+function lightresponsesBip()
+	//---ph and horiz are computed in the parent directory
+	string DF=getdataFolder(1)
+	setdatafolder ::
+	nvar tstop,phnum,flanks,field,phdist
+	wave phloc,ph,horiz_ph			//---gather waves
+	setdatafolder	$DF				//---back to BC directory
+	variable contrast=1
+	variable/g bipTauA=60			//---activation tau
+	variable/g bipRad=50			//---BC RF radius
+	variable/g bipnum_phnum=1 	//---BC density (same as Ph)
+	variable/g bipVhalf=0.2		//---half voltage of the BC input-outpur (nonlinear RF component)
+	variable/g bipVslope=10		//---slope of the BC nonlinear RF
+
+	variable tt,phcount,horcount,bipcount,bipStim2,bipStim1,bipStim3,bipStim4
+	//---bipolar cells
+	make/o/n=(tstop,phnum/bipnum_phnum) bip=0,ph_exp=0,ph_bip_release=0
+	setscale/I y,0,field,bip
+	variable counterBIP=0
+	
+	//---contrast adjustment
+	duplicate/o ph,phBip
+	duplicate/o horiz_ph,horiz_phBip
+	phBip*=contrast
+	horiz_phBip*=contrast
+
+	//---sum photoreceptor input	
+	//---function that describes the connection between presynaptic ph to bips
+	make/o/n=(field) ComDist=exp(-p^2/bipRad^2/2)
+	variable baseLine=1/(1+exp(bipVslope*bipVhalf))
+	ph_exp=1/(1+exp(-bipVslope*(phBip[ p ][q]-bipVhalf)))			//---converts ph voltage to release
+	for (bipcount=0;bipcount<phnum/bipnum_phnum;bipcount++)			//---gathers inputs from Ph
+		for (phcount=0;phcount<phnum;phcount++)
+			variable dist=ComDist[abs(bipcount-phcount)*phdist]
+			if(dist>0.02)
+				ph_bip_release[][bipcount]+=(-baseLine+ph_exp[ p ][ phcount ])*dist 	//---release onto BC
+			endif
+		endfor
+	endfor
+	bip[1,inf][]=(ph_bip_release[p][q]-bip[p-1][q])/bipTauA+bip[p-1][q]	//---BC voltage at each step
+end
